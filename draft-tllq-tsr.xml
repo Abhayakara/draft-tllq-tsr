@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE rfc SYSTEM "rfc2629-xhtml.ent">
-<rfc category="std" submissionType="IETF" docName="draft-tllq-tsr-02" ipr="trust200902"
+<rfc category="std" submissionType="IETF" docName="draft-tllq-tsr-03" ipr="trust200902"
      xmlns:xi="http://www.w3.org/2001/XInclude" version="3"
      scripts="Common,Latin" sortRefs="false"
      symRefs="true" tocDepth="3" tocInclude="true" xml:lang="en">
@@ -36,7 +36,7 @@
       </address>
     </author>
 
-    <date year='2022' month='April' day='24'/>
+    <date year='2023' month='March' day='13'/>
     <area>Internet</area>
     <workgroup>Internet Engineering Task Force</workgroup>
     <abstract>
@@ -181,6 +181,15 @@
 	  the authority section. E.g., for a DNS-SD service instance, only the SRV record is included, not the TXT record,
 	  in order to conserve space in the probe packet. This doesn't work for TSR probes, because the mDNS registrar
 	  receiving the probe needs to be able to determine if there is a conflict by looking at the probe message alone.
+	</t>
+	<t>
+	  When constructing the authority section for a probe, all of the RRs on any given name MUST be included in the
+	  same probe message. If there isn't enough space to fit all the RRs for a name into the authority section of a particular probe message,
+	  that name MUST NOT appear in the question of that message.
+	</t>
+	<t>
+	  In the case where the set of records on a particular name will not fit into a single probe packet, the TSR
+	  option MUST NOT be used.
 	</t>
       </section>
       <section>
