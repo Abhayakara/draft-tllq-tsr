@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE rfc SYSTEM "rfc2629-xhtml.ent">
-<rfc category="std" submissionType="IETF" docName="draft-tllq-tsr-03" ipr="trust200902"
+<rfc category="std" submissionType="IETF" docName="draft-tllq-tsr-04" ipr="trust200902"
      xmlns:xi="http://www.w3.org/2001/XInclude" version="3"
-     scripts="Common,Latin" sortRefs="false"
+     scripts="Common,Latin" sortRefs="false" consensus="true"
      symRefs="true" tocDepth="3" tocInclude="true" xml:lang="en">
   <front>
-    <title abbrev='TSR RR for mDNS'>
-      Multicast DNS conflict resolution using the Time Since Received (TSR) RR
+    <title abbrev='TSR EDNS option for mDNS'>
+      Multicast DNS conflict resolution using the Time Since Received (TSR) EDNS option
     </title>
     <author initials="T" surname="Lemon" fullname="Ted Lemon">
       <organization>Apple Inc.</organization>
@@ -23,27 +23,19 @@
     </author>
 
     <author asciiInitials="L" asciiSurname="Qin" asciiFullname="Liang Qin" initials="秦" surname="良" fullname="秦良">
-      <organization>Apple Inc.</organization>
       <address>
-	<postal>
-          <street>One Apple Park Way</street>
-          <city>Cupertino</city>
-          <region>California</region>
-          <code>95014</code>
-          <country>USA</country>
-        </postal>
 	<email>Leonqin0101@gmail.com</email>
       </address>
     </author>
 
-    <date year='2023' month='March' day='13'/>
+    <date year='2024' month='March' day='4'/>
     <area>Internet</area>
     <workgroup>Internet Engineering Task Force</workgroup>
     <abstract>
       <t>
 	This document specifies a new conflict resolution mechanism for DNS, for use in cases where the advertisement is
 	being proxied, rather than advertised directly, e.g. when using a combined DNS-SD Advertising Proxy and SRP
-	registrar. A new DNS RR is defined that communicates the time at which the set of resource records on a particular
+	registrar. A new EDNS option is defined that communicates the time at which the set of resource records on a particular
 	DNS owner name was most recently updated.
       </t>
     </abstract>
@@ -72,7 +64,7 @@
 	be in conflict with the old registration.
       </t>
       <t>
-	In the case of such a conflict, the current behavior of mDNS is for the older (stale) registration to win, and the
+	In the case of such a supposed conflict, the current behavior of mDNS is for the older (stale) registration to win, and the
 	newer (current) information to be discarded. This behavior, which is entirely correct for services that are
 	advertising on their own behalf, is exactly wrong when a service registration is being proxied.
       </t>
@@ -144,132 +136,114 @@
       </section>
     </section>
     <section anchor="tsrrr">
-      <name>Time Since Received Resource Record</name>
+      <name>Time Since Received EDNS Option</name>
       <t>
-	The Time Since Received (TSR) RR is given the same owner name as the RRset or RRsets for which it is asserting a
-	received time. When a service registration is successful, the mDNS registrar records the wall clock time at which
+	The Time Since Received (TSR) EDNS option references a specific RR in the answer, authority or additional sections of
+	an mDNS message. This option specific to an owner name, not to an individual RRset.
+	When a service registration is successful, the mDNS registrar records the wall clock time at which
 	the registration request was received. This may be the current time, or a time specified by a proxy service that is
 	doing the registration. This time is only recorded if the service requesting the registration specifies it;
-	otherwise, the time of receipt is not recorded.
+	otherwise, the time of receipt is not recorded. The registrar also has the public key that was used in the
+	registration.
       </t>
       <t>
-	The TSR RR contains the difference, in seconds, between the the time at which the TSR record is being generated and
-	the time of receipt for recorded for that owner name. If this difference is greater than seven days (7 * 24 * 60 *
-	60), the mDNS registrar MUST use a value of seven days rather than the larger value.
+	The TSR EDNS option consists of three fields: the RR offset (two byte integer in network
+	byte order), a key hash (32 bytes), and a time offset (four bytes).
       </t>
       <t>
-	The resource record is formatted as described in <xref target="RFC1035" section="3.2.1" sectionFormat="of"/>. The
-	RDATA consists of the time offset in the form of a 32-bit unsigned number in network byte order.
+	The RR offset points to the first name in a given section of the mDNS Message for which
+	the TSR is in effect.  The first answer is at offset 0, the second answer at offset 1
+	and so on. Or if there is only one answer but also an authority record, the first
+	authority record is at offset 2. If following that record there is a record in the
+	additional section (including the OPT RR itself), that record would be at offset 3.
+	Questions can't have TSRs associated with them, and hence the counting starts with the
+	first answer, not the first question.
+      </t>
+      <t>
+	If there are multiple records in the mDNS Message with the same owner name, only one TSR option is emitted for
+	that name, and it applies to every RR in the mDNS Message with that owner name. It is not possible in the
+	SRP protocol for two updates at two different times to contain records that apply to the same name.
+      </t>
+      <t>
+	The second field, the key hash, is an SHA-256 hash (TBD) of the public key that was used to authenticate
+	the SRP update that most recently updated the RRs on the owner name to which the TSR option applies.
+      </t>
+      <t>
+	The TSR time offset field contains the difference, in seconds, between the the
+	time at which the TSR record is being generated and the time of receipt for recorded for
+	that owner name. If this difference is greater than seven days (7 * 24 * 60 * 60), the
+	mDNS registrar MUST use a value of seven days rather than the larger value.
       </t>
     </section>
     <section>
       <name>mDNS Registrar Behavior</name>
       <section>
-	<name>When sending a probe</name>
+	<name>When sending an mDNS message</name>
 	<t>
-	  When probing, for each ANY RR in the question section of the probe query, if a time of receipt has been recorded
-	  for the owner name of that RR, the mDNS registrar generates a TSR record according to the method described in
-	  <xref target="tsrrr"/>. This TSR RR is then added to the authority section of the query, along with the contents
-	  of all conflict-producing RRsets it has recorded on that owner name.
-	</t>
-	<t>
-	  A conflict-producing RRset is an RRset with an RRtype that can produce a conflict. Most RRtypes can produce
-	  conflicts. RRtypes that do not produce conflicts include the PTR RRtype and the TSR RRtype.
-	</t>
-	<t>
-	  This is new behavior: mDNS registrars that do not use the TSR record typically do not include all such records in
-	  the authority section. E.g., for a DNS-SD service instance, only the SRV record is included, not the TXT record,
-	  in order to conserve space in the probe packet. This doesn't work for TSR probes, because the mDNS registrar
-	  receiving the probe needs to be able to determine if there is a conflict by looking at the probe message alone.
-	</t>
-	<t>
-	  When constructing the authority section for a probe, all of the RRs on any given name MUST be included in the
-	  same probe message. If there isn't enough space to fit all the RRs for a name into the authority section of a particular probe message,
-	  that name MUST NOT appear in the question of that message.
-	</t>
-	<t>
-	  In the case where the set of records on a particular name will not fit into a single probe packet, the TSR
-	  option MUST NOT be used.
+	  When constructing an mDNS message, the mDNS registrar includes one TSR option for each unique owner name for
+	  any RR added to the mDNS message for which the mDNS registrar is authoritative and which was registered using SRP.
 	</t>
       </section>
       <section>
-	<name>When processing a probe</name>
+	<name>When processing an mDNS message</name>
 	<t>
-	  A probe is an mDNS query that includes an authority section.
+	  When an mDNS registrar receives an mDNS message query, it processes it as usual, unless
+	  it discovers a conflict. When data in the mDNS message conflicts with data in the mDNS
+	  querier's authority database, as described in <xref target="RFC6762" section="8.1"
+	  sectionFormat="of"/>, this is considered to be a conflict.
 	</t>
 	<t>
-	  When an mDNS registrar receives a probe query, it processes it as usual, unless it discovers a conflict. When data
-	  in the authority section of the probe that matches a particular RR in the question section, and that data
-	  conflicts with data in the mDNS registrar's own database, as described in <xref target="RFC6762" section="8.1"
-	  sectionFormat="of"/>, this is considered to be a probe conflict.
+	  When a conflict detected for which a TSR record in the mDNS message is applicable, and the local record was also
+	  registered using SRP, the registrar checks to see if the key hashes match. If they do not, then the conflict is
+	  processed as usual. If either the mDNS record or the local authoritative record does not contain TSR information,
+	  the conflict is processed as usual.
 	</t>
 	<t>
-	  Note that TSR records should not exist in the authority database of any mDNS registrar. This would not make sense,
-	  because the TSR record encodes a relative time, and in order to generate a TSR record, the mDNS registrar needs an
-	  absolute (wall clock) time. They are also not conflict-producing records. So a TSR record can never be the basis
-	  for detecting a conflict.
+	  When both versions of the data have TSR records, and the key hashes match, if the
+	  record in the mDNS response is more recent, the local authoritative data is discarded
+	  from the authority dtheatabase and the SRP registrar function is notified that that data
+	  is stale.
 	</t>
 	<t>
-	  After a probe conflict has been detected, the registrar checks the authority section of the probe query for a TSR
-	  record with the same owner name as the name of the question for which a potential conflict was detected. It also
-	  checks for a recorded time of receipt on that owner name in its own authority database.  If no TSR record is
-	  found, or no recorded time of receipt is present, then the probe conflict is processed normally as described in
-	  sections 8.1 (paragraph 8), 8.2 and <xref target="RFC6762" section="9" sectionFormat="bare"/>.
-	</t>
-	<t>
-	  If both the TSR record in the authority section and the recorded time of receipt are found, then before doing
-	  normal processing of the probe conflict, the two times are compared. This is done by subtracting the value
-	  contained in the TSR record from the current wall clock time to determine the time of receipt of the data in the
-	  probe. If the time of receipt in the probe is more recent than (greater then) the time of receipt in the registrar's
-	  authority database, then the registrar sees this as losing the conflict and removes its authority records.
-	</t>
-	<t>
-	  Otherwise, as when both times are not available for comparison, the probe conflict is processed normally as
-	  described in sections 8.1 and <xref target="RFC6762" section="8.2" sectionFormat="of"/>.
-	</t>
-	<section>
-	  <name>Processing multiple questions in a probe</name>
-	  <t>
-	    Multicast DNS probes can contain more than one question. The question and authoritative data for each owner name
-	    are handled separately, as described above, so it may be that data on some owner names is handled based on the TSR
-	    conflict detection process, while data on other owner names is handled using the conflict detection mechanism
-	    described in <xref target="RFC6762" section="9" sectionFormat="of"/>.
-	  </t>
-	</section>
-	<section>
-	  <name>The effect of network latency on time computations</name>
-	  <t>
-	    Because TSR computations are affected by network latency, comparisons can’t be considered accurate. It is
-	    therefore necessary to tolerate some amount of error. In practice, however, it should generally not be the case
-	    that two advertising proxies receive SRP updates from the same SRP client at nearly the same time. So it should
-	    always be the case either that there is a clear ordering to the timestamps, or that there is no conflict in the
-	    data. For example with anycast, a retransmission could go to a different SRP registrar, but in this case both
-	    servers would simultaneously receive identical data, so the close ordering or even equality of the timestamps
-	    should not affect the outcome.
-	  </t>
-	</section>
-      </section>
-      <section>
-	<name>When sending a reply</name>
-	<t>
-	  Records with the TSR RRtype MUST NOT be send in any section of an mDNS reply.
-	</t>
-      </section>
-      <section>
-	<name>When processing a reply</name>
-	<t>
-	  TSR records are not allowed in replies. An mDNS registrar receiving an mDNS reply containing a TSR record MUST
-	  silently ignore the TSR record.
+	  If, however, the version of the data received in the mDNS response is less recent than the authoritative data,
+	  the registrar ignores the data in the mDNS response.
 	</t>
       </section>
     </section>
     <section>
-      <name>Internal Handling of TSR records</name>
+      <name>mDNS querier behavior when processing an mDNS message</name>
       <t>
-	The TSR record that is sent on the wire is expressed in seconds relative to the time of receipt of the
-	registration. In order to derive a TSR record, the registrar must remember the time at which the registration
+	As with with the mDNS registrar case, when an mDNS querier receives an mDNS Message, it compares TSR information
+	in the local cache with the TSR information in the message. If TSR information is present in both locations,
+	and the data in the mDNS message is more recent, the information in the cache is replaced with the information
+	in the mDNS message. Otherwise, the information in the mDNS message is ignored.
+      </t>
+      <t>
+	Note that some mDNS registrars only answer internal queries out of cache, and populate their cache using information
+	they receive both from their own mDNS announcements and answers and from information received in responses sent by
+	other mDNS registrars. In addition to the behavior described for mDNS registrars, such mDNS registrars MUST also
+	implement the behavior described here for queriers with respect to cache updates.
+      </t>
+    </section>
+    <section>
+      <name>The effect of network latency on time computations</name>
+      <t>
+	Because TSR computations are affected by network latency, comparisons can’t be considered accurate. It is
+	therefore necessary to tolerate some amount of error. In practice, however, it should generally not be the case
+	that two advertising proxies receive SRP updates from the same SRP client at nearly the same time. So it should
+	always be the case either that there is a clear ordering to the timestamps, or that there is no conflict in the
+	data. For example with anycast, a retransmission could go to a different SRP registrar, but in this case both
+	servers would simultaneously receive identical data, so the close ordering or even equality of the timestamps
+	should not affect the outcome.
+      </t>
+    </section>
+    <section>
+      <name>Internal Handling of TSR data</name>
+      <t>
+	The TSR option that is sent on the wire is expressed in seconds relative to the time of receipt of the
+	registration. In order to derive the time to send in a TSR option, the registrar must remember the time at which the registration
 	occurred. This time is recorded as an absolute time, not a relative time. We refer to this as the time of
-	receipt. When sending a TSR RR, the registrar computes the difference between the current time and the time of
+	receipt. When constructing a TSR option, the registrar computes the difference between the current time and the time of
 	receipt, which must always be in the past. This difference, which should be a positive integer, is converted to
 	seconds, and that unsigned value is then used to synthesize the TSR RR.
       </t>
@@ -284,18 +258,13 @@
       </t>
     </section>
     <section>
-      <name>Legacy Registrars</name>
-      <t>
-	An mDNS registrar that does not support TSR and receives a probe containing a TSR record will treat the TSR record
-	as part of the authoritative data being probed, and will see that data as a conflict. This will produce the correct
-	behavior: the non-implementing registrar will respond with its authoritative data, and the probing registrar will
-	either see a conflict (and treat the probe as having failed) or will see no conflict, since the non-implementing
-	registrar will not have sent a TSR record.
-      </t>
-      <t>
-	mDNS registrars that support the TSR record MUST NOT send any TSR record in an mDNS response. Consequently,
-	non-implementing mDNS registrars will never see a TSR record other than in a probe, which we have shown will be
-	handled correctly.
+      <name>Legacy Behavior</name>
+      <t>y
+	mDNS registrars and queriers that do not support the TSR option are expected to ignore the option, so they will behave
+	as if no TSR option was sent. This may result in such registrars temporarily caching stale data. However, in the
+	normal course of processing, more recent data will win. In cases where it does not, the Reconfirm process which
+	is part of <xref target="RFC6762"/> already works to clear stale data: since we expect SRP servers to implement
+	TSR, by the time a Reconfirm is attempted, all authoritative stale data should have been cleared.
       </t>
     </section>
     <section>
@@ -325,8 +294,8 @@
     <section>
       <name>Security Considerations</name>
       <t>
-	The TSR RR is an optimization: it ameliorates an edge case for mDNS proxies. A malicious host on the same link could
-	use the TSR RR to win conflict resolution processes. However, because TSR is only used by proxies, this technique
+	The TSR option is an optimization: it ameliorates an edge case for mDNS proxies. A malicious host on the same link could
+	use the TSR option to win conflict resolution processes. However, because TSR is only used by proxies, this technique
 	will not work for normal mDNS service registrations: in that case, normal mDNS conflict resolution is done, and the
 	attacker gains no benefit from using TSR.
       </t>
@@ -347,10 +316,9 @@
     <section>
       <name>IANA Considerations</name>
       <t>
-	IANA is requested to allocate a new RR Type from the DNS Resource Record (RR) TYPEs registry for the 'Time Since
-	Received' Resource Record. The type shall be 'TSR'. The value shall be allocated by IANA. The meaning shall be
-	'Multicast DNS Time Since Received". Reference shall refer to this document, once published. There is no template
-	specified, and IANA shall determine the registration date.
+	IANA is requested to allocate a new OPT RR option code from the DNS EDNS0 Option Codes (OPT) registry for the 'Time Since
+	Received' Option. The Name shall be 'mDNS-TSR'. The value shall be allocated by IANA. The meaning shall be
+	'Multicast DNS Time Since Received". Reference shall refer to this document, once published.  IANA shall determine the registration date.
       </t>
     </section>
   </middle>
@@ -361,7 +329,6 @@
     <references>
       <name>Normative References</name>
       <xi:include href="https://xml2rfc.ietf.org/public/rfc/bibxml/reference.RFC.1034.xml"/>
-      <xi:include href="https://xml2rfc.ietf.org/public/rfc/bibxml/reference.RFC.1035.xml"/>
       <xi:include href="https://xml2rfc.ietf.org/public/rfc/bibxml/reference.RFC.6762.xml"/>
       <xi:include href="https://xml2rfc.ietf.org/public/rfc/bibxml3/reference.I-D.lemon-srp-replication.xml"/>
       <xi:include href="https://xml2rfc.ietf.org/public/rfc/bibxml3/reference.I-D.sctl-advertising-proxy.xml"/>
