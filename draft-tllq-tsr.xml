@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE rfc SYSTEM "rfc2629-xhtml.ent">
-<rfc category="std" submissionType="IETF" docName="draft-tllq-tsr-05" ipr="trust200902"
+<rfc category="std" submissionType="IETF" docName="draft-ietf-dnssd-tsr-050 ipr="trust200902"
      xmlns:xi="http://www.w3.org/2001/XInclude" version="3"
      scripts="Common,Latin" sortRefs="false" consensus="true"
      symRefs="true" tocDepth="3" tocInclude="true" xml:lang="en">
@@ -22,13 +22,7 @@
       </address>
     </author>
 
-    <author asciiInitials="L" asciiSurname="Qin" asciiFullname="Liang Qin" initials="秦" surname="良" fullname="秦良">
-      <address>
-	<email>Leonqin0101@gmail.com</email>
-      </address>
-    </author>
-
-    <date year='2024' month='October' day='21'/>
+    <date year='2025' month='March' day='21'/>
     <area>Internet</area>
     <workgroup>Internet Engineering Task Force</workgroup>
     <abstract>
@@ -151,6 +145,7 @@
 	answer RRs, one authority RR and two additional RRs, an index of 0 would refer to the first answer, an index of 1 to the
 	second answer, and index of 2 to the single authority record, and so on. Questions are excluded because they have no
 	data associated with them, and so it makes no sense for them to have TSR records associated with them.
+      </t>
       <t>
 	If there is more than one record in the mDNS Message with the same owner name, only one TSR option is emitted for
 	that name, and it applies to every RR in the mDNS Message with that owner name. It is not possible in the
@@ -177,7 +172,6 @@
 	in a cache or authority database on an mDNS registrar, and is converted to a relative time whenever an mDNS message is
 	generated from local data.
       </t>
-
     </section>
     <section>
       <name>mDNS Registrar Behavior</name>
@@ -238,7 +232,7 @@
 	  <xref target="RFC6762" section="8.1" sectionFormat="of"/> describes how an mDNS registrar probes to ensure that there is
 	  no conflicting data for records in the probing state. The behavior for records that are in the probing state on names to
 	  which no TSR data applies is unchanged.  When there is TSR data on a name for which records are being probed,
-	  the mDNS registar MUST include TSR options for each such name as described in <xref target="conspkt"/>. Handling of
+	  the mDNS registar MUST include TSR options for each such name as described in <xref target="tsrrr"/>. Handling of
 	  responses is described in <xref target="procmes"/>.
 	</t>
       </section>
@@ -248,15 +242,15 @@
 	  When processing a question for which local TSR data is present, the mDNS registrar MUST first check to see if there is corresponding
 	  data in the mDNS message being processed. If there is, the question is part of a probe. In this case, before constructing a response,
 	  the mDNS registrar MUST process the non-question records in the packet, since this could result in stale data being flushed. Processing
-	  is performed as described in <xarget xref="procmes"/>
+	  is performed as described in <xref target="procmes"/>
 	</t>
 	<t>
 	  Once all non-question records have been processed, the responder MUST respond to any questions that match
 	  locally-registered resource records for which a known answer is not present in the query. Responses are constructed as
-	  described in <xref target="conspkt"/>.
+	  described in <xref target="tsrrr"/>.
 	</t>
       </section>
-      <section target="procmes">
+      <section anchor="procmes">
 	<name>Processing messages containing TSR options</name>
 	<t>
 	  For each TSR option in an mDNS message, the mDNS registrar first determines the owner name of the TSR option by assigning
@@ -296,7 +290,7 @@
 	<t>
 	  In cases where the TSR data for a particular name is present both locally and in the mDNS message, the mDNS responder
 	  MUST compare the key checksums. If they are different, then the records are always in conflict, and are handled according
-	  to the context of the conflict, as described in <xref target="RFC6763" section="9" sectionFormat="of"/>
+	  to the context of the conflict, as described in <xref target="RFC6762" section="9" sectionFormat="of"/>
 	</t>
 	<t>
 	  In cases where the key checksums match, the mDNS registrar MUST compare the times. When the TSR time from the mDNS Message
@@ -361,6 +355,7 @@
 	  prodiuce the time difference, and this is clamped to a maximum of seven days.
 	</t>
       </section>
+    </section>
     <section>
       <name>The effect of network latency on time computations</name>
       <t>
